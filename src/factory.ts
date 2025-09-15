@@ -43,6 +43,7 @@ import {Rust} from './strategies/rust';
 import {Sfdx} from './strategies/sfdx';
 import {Simple} from './strategies/simple';
 import {TerraformModule} from './strategies/terraform-module';
+import {UvWorkspace} from './strategies/uv-workspace';
 import {Strategy} from './strategy';
 import {AlwaysBumpPatch} from './versioning-strategies/always-bump-patch';
 import {DependencyManifest} from './versioning-strategies/dependency-manifest';
@@ -111,6 +112,7 @@ const releasers: Record<string, ReleaseBuilder> = {
   elixir: options => new Elixir(options),
   dart: options => new Dart(options),
   bazel: options => new Bazel(options),
+  'uv-workspace': options => new UvWorkspace(options),
 };
 
 export async function buildStrategy(
