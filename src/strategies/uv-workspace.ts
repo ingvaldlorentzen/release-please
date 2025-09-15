@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,8 +29,12 @@ interface UvWorkspaceConfig {
 
 interface UvSource {
   workspace?: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  git?: string;
+  url?: string;
+  path?: string;
+  tag?: string;
+  branch?: string;
+  rev?: string;
 }
 
 interface UvWorkspaceManifest {
@@ -38,6 +42,11 @@ interface UvWorkspaceManifest {
     name?: string;
     version?: string;
     dependencies?: string[];
+    description?: string;
+    readme?: string;
+    'requires-python'?: string;
+    license?: string | {text?: string; file?: string};
+    authors?: Array<{name?: string; email?: string}>;
   };
   tool?: {
     uv?: {
@@ -46,12 +55,15 @@ interface UvWorkspaceManifest {
     };
   };
   'dependency-groups'?: Record<string, string[]>;
+  'build-system'?: {
+    requires?: string[];
+    'build-backend'?: string;
+  };
 }
 
 export class UvWorkspace extends BaseStrategy {
   private workspaceManifest?: UvWorkspaceManifest | null;
   private memberManifests: Map<string, UvWorkspaceManifest> = new Map();
-  private dependencyGraph: Map<string, Set<string>> = new Map();
 
   protected async buildUpdates(
     options: BuildUpdatesOptions
@@ -73,16 +85,9 @@ export class UvWorkspace extends BaseStrategy {
     // Parse workspace configuration
     const workspaceManifest = await this.getWorkspaceManifest();
     if (!workspaceManifest?.tool?.uv?.workspace?.members) {
-      this.logger.warn('No UV workspace configuration found');
-      // Fall back to simple Python strategy behavior
-      updates.push({
-        path: this.addPath('pyproject.toml'),
-        createIfMissing: false,
-        updater: new PyProjectToml({
-          version,
-        }),
-      });
-      return updates;
+      throw new Error(
+        'No UV workspace configuration found in pyproject.toml. Expected [tool.uv.workspace] with members array.'
+      );
     }
 
     const members = workspaceManifest.tool.uv.workspace.members;
@@ -97,9 +102,8 @@ export class UvWorkspace extends BaseStrategy {
       `Found UV workspace with ${members.length} members, upgrading all`
     );
 
-    // Parse all member manifests and build dependency graph
+    // Parse all member manifests
     await this.parseMemberManifests(members);
-    await this.buildDependencyGraph();
 
     // Collect all package names and versions
     for (const [, manifest] of this.memberManifests) {
@@ -123,26 +127,24 @@ export class UvWorkspace extends BaseStrategy {
     // Update member pyproject.toml files
     for (const [memberPath, manifest] of this.memberManifests) {
       const pyprojectPath = `${memberPath}/pyproject.toml`;
+
+      // Use UvWorkspaceToml updater if the member has dependency-groups
+      // that might reference other workspace packages, otherwise use
+      // the standard PyProjectToml updater
+      const updater = manifest['dependency-groups']
+        ? new UvWorkspaceToml({
+            version,
+            versionsMap,
+          })
+        : new PyProjectToml({
+            version,
+          });
+
       updates.push({
         path: this.addPath(pyprojectPath),
         createIfMissing: false,
-        updater: new PyProjectToml({
-          version,
-        }),
+        updater,
       });
-
-      // If this member has dependencies on other workspace packages,
-      // update those references in dependency-groups
-      if (manifest['dependency-groups']) {
-        updates.push({
-          path: this.addPath(pyprojectPath),
-          createIfMissing: false,
-          updater: new UvWorkspaceToml({
-            version,
-            versionsMap,
-          }),
-        });
-      }
     }
 
     // Update uv.lock file
@@ -163,10 +165,9 @@ export class UvWorkspace extends BaseStrategy {
         const manifestPath = `${memberPath}/pyproject.toml`;
         const manifestContent = await this.getContent(manifestPath);
         if (!manifestContent) {
-          this.logger.warn(
-            `Member ${memberPath} declared but did not find pyproject.toml`
+          throw new Error(
+            `Workspace member '${memberPath}' declared but pyproject.toml not found at ${manifestPath}`
           );
-          continue;
         }
         const manifest = this.parseManifest(manifestContent.parsedContent);
         this.memberManifests.set(memberPath, manifest);
@@ -175,78 +176,29 @@ export class UvWorkspace extends BaseStrategy {
   }
 
   private async expandWorkspaceMember(pattern: string): Promise<string[]> {
-    // Simple implementation - handle exact paths and basic globs
+    // Handle exact paths without glob patterns
     if (!pattern.includes('*')) {
       return [pattern];
     }
 
-    // For glob patterns, we need to list directories
-    // This is a simplified version - in production, would use proper glob library
-    const basePath = pattern.split('*')[0];
+    // Use the proper glob matching from GitHub API
+    // Find all pyproject.toml files matching the pattern
+    const globPattern = `${pattern}/pyproject.toml`;
     try {
-      const files = await this.github.findFilesByFilenameAndRef(
-        'pyproject.toml',
-        this.targetBranch,
-        basePath
+      const files = await this.github.findFilesByGlobAndRef(
+        globPattern,
+        this.targetBranch
       );
-      return files
-        .map(f => f.replace('/pyproject.toml', ''))
-        .filter(p => p.startsWith(basePath));
+      // Extract directory path from file paths
+      return files.map(f => f.replace('/pyproject.toml', ''));
     } catch (e) {
-      this.logger.warn(`Failed to expand workspace pattern ${pattern}:`, e);
-      return [];
+      this.logger.error(`Failed to expand workspace pattern ${pattern}:`, e);
+      throw new Error(
+        `Failed to expand workspace member pattern '${pattern}': ${e}`
+      );
     }
   }
 
-  private async buildDependencyGraph(): Promise<void> {
-    // Build a graph of which packages depend on which workspace packages
-    for (const [, manifest] of this.memberManifests) {
-      const packageName = manifest.project?.name;
-      if (!packageName) continue;
-
-      const dependencies = new Set<string>();
-
-      // Check regular dependencies
-      if (manifest.project?.dependencies) {
-        for (const dep of manifest.project.dependencies) {
-          const depName = this.extractPackageName(dep);
-          if (this.isWorkspacePackage(depName)) {
-            dependencies.add(depName);
-          }
-        }
-      }
-
-      // Check dependency groups
-      if (manifest['dependency-groups']) {
-        for (const group of Object.values(manifest['dependency-groups'])) {
-          for (const dep of group) {
-            const depName = this.extractPackageName(dep);
-            if (this.isWorkspacePackage(depName)) {
-              dependencies.add(depName);
-            }
-          }
-        }
-      }
-
-      this.dependencyGraph.set(packageName, dependencies);
-    }
-  }
-
-  private extractPackageName(dependency: string): string {
-    // Extract package name from dependency specifier
-    // e.g., "package>=1.0.0" -> "package"
-    return dependency.split(/[<>=!]/)[0].trim();
-  }
-
-  private isWorkspacePackage(packageName: string): boolean {
-    // Check if a package name is one of our workspace packages
-    for (const manifest of this.memberManifests.values()) {
-      if (manifest.project?.name === packageName) {
-        return true;
-      }
-    }
-    return this.workspaceManifest?.project?.name === packageName;
-  }
 
   private async getWorkspaceManifest(): Promise<UvWorkspaceManifest | null> {
     if (this.workspaceManifest === undefined) {

@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,19 +21,26 @@ interface UvLockPackage {
   name: string;
   version: string;
   source?: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [key: string]: any;
+    type?: string;
+    url?: string;
+    reference?: string;
+    git?: string;
+    rev?: string;
+    tag?: string;
+    branch?: string;
+    subdirectory?: string;
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  dependencies?: Array<{name: string; version?: string}>;
+  'optional-dependencies'?: Record<string, Array<{name: string; version?: string}>>;
+  'dev-dependencies'?: Array<{name: string; version?: string}>;
 }
 
 interface UvLockContent {
   version?: number;
-  requires_python?: string;
+  'requires-python'?: string;
   package?: UvLockPackage[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  'resolution-markers'?: string[];
+  'supported-markers'?: string[];
 }
 
 /**

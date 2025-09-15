@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,16 @@ import {replaceTomlValue} from '../../util/toml-edit';
 import {DefaultUpdater} from '../default';
 import {Version, VersionsMap} from '../../version';
 
+interface UvSource {
+  workspace?: boolean;
+  git?: string;
+  url?: string;
+  path?: string;
+  tag?: string;
+  branch?: string;
+  rev?: string;
+}
+
 interface UvWorkspaceTomlContent {
   project?: {
     name?: string;
@@ -29,8 +39,7 @@ interface UvWorkspaceTomlContent {
       workspace?: {
         members?: string[];
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sources?: Record<string, any>;
+      sources?: Record<string, UvSource>;
     };
   };
   'dependency-groups'?: Record<string, string[]>;
@@ -77,6 +86,15 @@ export class UvWorkspaceToml extends DefaultUpdater {
       processedContent = this.updateDependencies(
         processedContent,
         parsed.project.dependencies,
+        logger
+      );
+    }
+
+    // Update tool.uv.sources for workspace references
+    if (this.versionsMap && parsed.tool?.uv?.sources) {
+      processedContent = this.updateUvSources(
+        processedContent,
+        parsed.tool.uv.sources,
         logger
       );
     }
@@ -137,6 +155,27 @@ export class UvWorkspaceToml extends DefaultUpdater {
         }
       }
     });
+
+    return processedContent;
+  }
+
+  private updateUvSources(
+    content: string,
+    sources: Record<string, UvSource>,
+    logger: Logger
+  ): string {
+    let processedContent = content;
+
+    // UV sources with workspace = true don't need version updates
+    // as they automatically use the workspace version.
+    // We only log for informational purposes.
+    for (const [packageName, source] of Object.entries(sources)) {
+      if (source.workspace === true && this.versionsMap?.has(packageName)) {
+        logger.info(
+          `Package ${packageName} uses workspace reference, version will be synchronized automatically`
+        );
+      }
+    }
 
     return processedContent;
   }

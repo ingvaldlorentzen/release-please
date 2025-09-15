@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2024 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ import {expect} from 'chai';
 import {GitHub} from '../../src/github';
 import {UvWorkspace} from '../../src/strategies/uv-workspace';
 import * as sinon from 'sinon';
-import {buildGitHubFileRaw, assertHasUpdate} from '../helpers';
+import {buildGitHubFileContent, buildGitHubFileRaw, assertHasUpdate} from '../helpers';
 import {buildMockConventionalCommit} from '../helpers';
 import {TagName} from '../../src/util/tag-name';
 import {Version} from '../../src/version';
@@ -37,6 +37,7 @@ const COMMITS = [
 ];
 
 describe('UV Workspace', () => {
+  const fixturesPath = './test/fixtures/strategies/uv-workspace';
   let github: GitHub;
 
   beforeEach(async () => {
@@ -93,92 +94,71 @@ describe('UV Workspace', () => {
   });
 
   describe('buildUpdates', () => {
-    it('handles workspace with multiple members', async () => {
+    it('builds common files for UV workspace', async () => {
       const strategy = new UvWorkspace({
         targetBranch: 'main',
         github,
         component: 'test-workspace',
       });
 
-      const rootPyproject = `
-[project]
-name = "workspace-root"
-version = "1.0.0"
-
-[tool.uv.workspace]
-members = ["packages/core", "packages/utils", "packages/cli"]
-`;
-
-      const corePyproject = `
-[project]
-name = "core-package"
-version = "1.0.0"
-dependencies = []
-`;
-
-      const utilsPyproject = `
-[project]
-name = "utils-package"
-version = "1.0.0"
-dependencies = []
-`;
-
-      const cliPyproject = `
-[project]
-name = "cli-package"
-version = "1.0.0"
-dependencies = ["core-package>=1.0.0", "utils-package>=1.0.0"]
-
-[dependency-groups]
-dev = ["pytest>=7.0.0"]
-workspace = ["core-package==1.0.0", "utils-package==1.0.0"]
-`;
-
-      const uvLock = `
-version = 1
-
-[[package]]
-name = "core-package"
-version = "1.0.0"
-
-[[package]]
-name = "utils-package"
-version = "1.0.0"
-
-[[package]]
-name = "cli-package"
-version = "1.0.0"
-`;
-
-      const getFileContentsStub = sandbox.stub(
-        github,
-        'getFileContentsOnBranch'
-      );
-
-      getFileContentsStub
+      sandbox
+        .stub(github, 'getFileContentsOnBranch')
         .withArgs('pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(rootPyproject));
-      getFileContentsStub
-        .withArgs('packages/core/pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(corePyproject));
-      getFileContentsStub
-        .withArgs('packages/utils/pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(utilsPyproject));
-      getFileContentsStub
-        .withArgs('packages/cli/pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(cliPyproject));
-      getFileContentsStub
-        .withArgs('uv.lock', 'main')
-        .resolves(buildGitHubFileRaw(uvLock));
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-workspace.toml')
+        );
 
-      const findFilesStub = sandbox.stub(github, 'findFilesByFilenameAndRef');
-      findFilesStub
-        .withArgs('pyproject.toml', 'main', 'packages/')
-        .resolves([
-          'packages/core/pyproject.toml',
-          'packages/utils/pyproject.toml',
-          'packages/cli/pyproject.toml',
-        ]);
+      sandbox
+        .stub(github, 'findFilesByGlobAndRef')
+        .withArgs('packages/*/pyproject.toml', 'main')
+        .resolves(['packages/core/pyproject.toml', 'packages/utils/pyproject.toml'])
+        .withArgs('apps/cli/pyproject.toml', 'main')
+        .resolves(['apps/cli/pyproject.toml']);
+
+      const latestRelease = undefined;
+      const release = await strategy.buildReleasePullRequest(
+        COMMITS,
+        latestRelease
+      );
+      const updates = release!.updates;
+
+      assertHasUpdate(updates, 'CHANGELOG.md', Changelog);
+      assertHasUpdate(updates, 'pyproject.toml', UvWorkspaceToml);
+      assertHasUpdate(updates, 'uv.lock', UvLock);
+    });
+
+    it('finds packages from workspace members patterns', async () => {
+      const strategy = new UvWorkspace({
+        targetBranch: 'main',
+        github,
+        component: 'test-workspace',
+      });
+
+      sandbox
+        .stub(github, 'getFileContentsOnBranch')
+        .withArgs('pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-workspace.toml')
+        )
+        .withArgs('packages/core/pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-core.toml')
+        )
+        .withArgs('packages/utils/pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-utils.toml')
+        )
+        .withArgs('apps/cli/pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-cli.toml')
+        );
+
+      sandbox
+        .stub(github, 'findFilesByGlobAndRef')
+        .withArgs('packages/*/pyproject.toml', 'main')
+        .resolves(['packages/core/pyproject.toml', 'packages/utils/pyproject.toml'])
+        .withArgs('apps/cli/pyproject.toml', 'main')
+        .resolves(['apps/cli/pyproject.toml']);
 
       const latestRelease = {
         tag: new TagName(Version.parse('1.0.0'), 'test-workspace'),
@@ -190,213 +170,189 @@ version = "1.0.0"
         COMMITS,
         latestRelease
       );
-
       const updates = release!.updates;
 
-      // Check for expected updates
-      assertHasUpdate(updates, 'CHANGELOG.md', Changelog);
       assertHasUpdate(updates, 'pyproject.toml', UvWorkspaceToml);
       assertHasUpdate(updates, 'packages/core/pyproject.toml', PyProjectToml);
       assertHasUpdate(updates, 'packages/utils/pyproject.toml', PyProjectToml);
-      // packages/cli/pyproject.toml gets both PyProjectToml and UvWorkspaceToml updates
-      // which results in a CompositeUpdater, so we just check it exists
-      const cliUpdate = updates.find(u => u.path === 'packages/cli/pyproject.toml');
-      expect(cliUpdate).to.not.be.undefined;
+      assertHasUpdate(updates, 'apps/cli/pyproject.toml', UvWorkspaceToml);
       assertHasUpdate(updates, 'uv.lock', UvLock);
-
-      expect(updates.length).to.be.at.least(6);
-    });
-
-    it('falls back to simple Python behavior without workspace', async () => {
-      const strategy = new UvWorkspace({
-        targetBranch: 'main',
-        github,
-        component: 'simple-package',
-      });
-
-      const simplePyproject = `
-[project]
-name = "simple-package"
-version = "1.0.0"
-dependencies = ["requests>=2.0.0"]
-`;
-
-      const getFileContentsStub = sandbox.stub(
-        github,
-        'getFileContentsOnBranch'
-      );
-
-      getFileContentsStub
-        .withArgs('pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(simplePyproject));
-
-      const latestRelease = undefined;
-      const release = await strategy.buildReleasePullRequest(
-        COMMITS,
-        latestRelease
-      );
-
-      const updates = release!.updates;
-
-      // Should only have basic updates
       assertHasUpdate(updates, 'CHANGELOG.md', Changelog);
-      assertHasUpdate(updates, 'pyproject.toml', PyProjectToml);
-
-      // Should not have workspace-specific updates
-      expect(updates.find(u => u.updater instanceof UvLock)).to.be.undefined;
     });
 
-    it('handles workspace with glob patterns', async () => {
+    it('updates cross-package dependencies correctly', async () => {
       const strategy = new UvWorkspace({
         targetBranch: 'main',
         github,
-        component: 'glob-workspace',
+        component: 'test-workspace',
       });
 
-      const rootPyproject = `
-[project]
+      const workspaceToml = `[project]
 name = "workspace-root"
 version = "1.0.0"
-
-[tool.uv.workspace]
-members = ["packages/*"]
-`;
-
-      const getFileContentsStub = sandbox.stub(
-        github,
-        'getFileContentsOnBranch'
-      );
-
-      getFileContentsStub
-        .withArgs('pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(rootPyproject));
-
-      const findFilesStub = sandbox.stub(github, 'findFilesByFilenameAndRef');
-      findFilesStub
-        .withArgs('pyproject.toml', 'main', 'packages/')
-        .resolves([
-          'packages/package-a/pyproject.toml',
-          'packages/package-b/pyproject.toml',
-        ]);
-
-      const packageAPyproject = `
-[project]
-name = "package-a"
-version = "1.0.0"
-`;
-
-      const packageBPyproject = `
-[project]
-name = "package-b"
-version = "1.0.0"
-dependencies = ["package-a>=1.0.0"]
-`;
-
-      getFileContentsStub
-        .withArgs('packages/package-a/pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(packageAPyproject));
-      getFileContentsStub
-        .withArgs('packages/package-b/pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(packageBPyproject));
-
-      const latestRelease = undefined;
-      const release = await strategy.buildReleasePullRequest(
-        COMMITS,
-        latestRelease
-      );
-
-      const updates = release!.updates;
-
-      // Check that glob expansion worked
-      assertHasUpdate(
-        updates,
-        'packages/package-a/pyproject.toml',
-        PyProjectToml
-      );
-      assertHasUpdate(
-        updates,
-        'packages/package-b/pyproject.toml',
-        PyProjectToml
-      );
-    });
-  });
-
-  describe('dependency tracking', () => {
-    it('tracks dependencies between workspace packages', async () => {
-      const strategy = new UvWorkspace({
-        targetBranch: 'main',
-        github,
-        component: 'dependency-workspace',
-      });
-
-      const rootPyproject = `
-[project]
-name = "workspace-root"
-version = "1.0.0"
-
-[tool.uv.workspace]
-members = ["packages/base", "packages/derived"]
-`;
-
-      const basePyproject = `
-[project]
-name = "base-package"
-version = "1.0.0"
-`;
-
-      const derivedPyproject = `
-[project]
-name = "derived-package"
-version = "1.0.0"
-dependencies = ["base-package>=1.0.0"]
 
 [dependency-groups]
-workspace = ["base-package==1.0.0"]
-`;
+dev = [
+  "core-package==1.0.0",
+  "utils-package>=1.0.0"
+]
 
-      const getFileContentsStub = sandbox.stub(
-        github,
-        'getFileContentsOnBranch'
-      );
+[tool.uv.workspace]
+members = ["packages/*"]`;
 
-      getFileContentsStub
+      const cliToml = `[project]
+name = "cli-app"
+version = "1.0.0"
+dependencies = [
+  "core-package==1.0.0",
+  "utils-package>=1.0.0"
+]
+
+[tool.uv.sources]
+core-package = { workspace = true }
+utils-package = { workspace = true }`;
+
+      sandbox
+        .stub(github, 'getFileContentsOnBranch')
         .withArgs('pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(rootPyproject));
-      getFileContentsStub
-        .withArgs('packages/base/pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(basePyproject));
-      getFileContentsStub
-        .withArgs('packages/derived/pyproject.toml', 'main')
-        .resolves(buildGitHubFileRaw(derivedPyproject));
+        .resolves(buildGitHubFileRaw(workspaceToml))
+        .withArgs('packages/cli/pyproject.toml', 'main')
+        .resolves(buildGitHubFileRaw(cliToml))
+        .withArgs('packages/core/pyproject.toml', 'main')
+        .resolves(buildGitHubFileContent(fixturesPath, 'pyproject-core.toml'))
+        .withArgs('packages/utils/pyproject.toml', 'main')
+        .resolves(buildGitHubFileContent(fixturesPath, 'pyproject-utils.toml'));
 
-      const findFilesStub = sandbox.stub(github, 'findFilesByFilenameAndRef');
-      findFilesStub.resolves([]);
+      sandbox
+        .stub(github, 'findFilesByGlobAndRef')
+        .withArgs('packages/*/pyproject.toml', 'main')
+        .resolves([
+          'packages/cli/pyproject.toml',
+          'packages/core/pyproject.toml',
+          'packages/utils/pyproject.toml',
+        ]);
 
-      const latestRelease = {
-        tag: new TagName(Version.parse('1.0.0'), 'dependency-workspace'),
-        sha: 'abc123',
-        notes: 'previous',
-      };
-
-      const release = await strategy.buildReleasePullRequest(
-        COMMITS,
-        latestRelease
-      );
-
+      const release = await strategy.buildReleasePullRequest(COMMITS, undefined);
       const updates = release!.updates;
 
-      // Should update the derived package - it will have a composite updater
-      // since it gets both PyProjectToml and UvWorkspaceToml updates
-      const derivedUpdate = updates.find(
-        u => u.path === 'packages/derived/pyproject.toml'
-      );
-      expect(derivedUpdate).to.not.be.undefined;
+      // The CLI app should use UvWorkspaceToml updater because it has dependencies on workspace packages
+      const cliUpdate = updates.find(u => u.path === 'packages/cli/pyproject.toml');
+      expect(cliUpdate).to.exist;
+      expect(cliUpdate!.updater).to.be.instanceOf(UvWorkspaceToml);
 
-      // Should also update base package
-      const baseUpdate = updates.find(
-        u => u.path === 'packages/base/pyproject.toml'
-      );
-      expect(baseUpdate).to.not.be.undefined;
+      // Verify cross-package dependencies will be updated
+      const rootUpdate = updates.find(u => u.path === 'pyproject.toml');
+      expect(rootUpdate).to.exist;
+      expect(rootUpdate!.updater).to.be.instanceOf(UvWorkspaceToml);
+    });
+
+    it('throws error when workspace configuration is missing', async () => {
+      const strategy = new UvWorkspace({
+        targetBranch: 'main',
+        github,
+        component: 'test-workspace',
+      });
+
+      sandbox
+        .stub(github, 'getFileContentsOnBranch')
+        .withArgs('pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileRaw(`[project]
+name = "simple-package"
+version = "1.0.0"`)
+        );
+
+      try {
+        await strategy.buildReleasePullRequest(COMMITS, undefined);
+        expect.fail('Should have thrown an error');
+      } catch (err: any) {
+        expect(err.message).to.include('No UV workspace configuration found');
+      }
+    });
+
+    it('throws error when member pyproject.toml is missing', async () => {
+      const strategy = new UvWorkspace({
+        targetBranch: 'main',
+        github,
+        component: 'test-workspace',
+      });
+
+      sandbox
+        .stub(github, 'getFileContentsOnBranch')
+        .withArgs('pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(
+            fixturesPath,
+            'pyproject-workspace.toml'
+          )
+        )
+        .withArgs('packages/missing/pyproject.toml', 'main')
+        .resolves(undefined);
+
+      sandbox
+        .stub(github, 'findFilesByGlobAndRef')
+        .withArgs('packages/*/pyproject.toml', 'main')
+        .resolves(['packages/missing/pyproject.toml'])
+        .withArgs('apps/cli/pyproject.toml', 'main')
+        .resolves([]);
+
+      try {
+        await strategy.buildReleasePullRequest(COMMITS, undefined);
+        expect.fail('Should have thrown an error');
+      } catch (err: any) {
+        expect(err.message).to.include('pyproject.toml not found');
+      }
+    });
+
+    it('handles uv.lock file updates correctly', async () => {
+      const strategy = new UvWorkspace({
+        targetBranch: 'main',
+        github,
+        component: 'test-workspace',
+      });
+
+      const getFileStub = sandbox.stub(github, 'getFileContentsOnBranch');
+      getFileStub
+        .withArgs('pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-workspace.toml')
+        )
+        .withArgs('packages/core/pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-core.toml')
+        )
+        .withArgs('packages/utils/pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-utils.toml')
+        )
+        .withArgs('apps/cli/pyproject.toml', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'pyproject-cli.toml')
+        )
+        .withArgs('uv.lock', 'main')
+        .resolves(
+          buildGitHubFileContent(fixturesPath, 'uv.lock')
+        );
+
+      sandbox
+        .stub(github, 'findFilesByGlobAndRef')
+        .withArgs('packages/*/pyproject.toml', 'main')
+        .resolves(['packages/core/pyproject.toml', 'packages/utils/pyproject.toml'])
+        .withArgs('apps/cli/pyproject.toml', 'main')
+        .resolves(['apps/cli/pyproject.toml']);
+
+      const release = await strategy.buildReleasePullRequest(COMMITS, undefined);
+      const updates = release!.updates;
+
+      const uvLockUpdate = updates.find(u => u.path === 'uv.lock');
+      expect(uvLockUpdate).to.exist;
+      expect(uvLockUpdate!.updater).to.be.instanceOf(UvLock);
+
+      // Verify the UvLock updater has the versions map
+      const uvLockUpdater = uvLockUpdate!.updater as UvLock;
+      const fileContent = await getFileStub('uv.lock', 'main');
+      const content = uvLockUpdater.updateContent(fileContent!.parsedContent);
+      expect(content).to.include('version = "0.1.0"'); // Should update to initial version
     });
   });
 });

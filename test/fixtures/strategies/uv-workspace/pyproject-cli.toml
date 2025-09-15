@@ -1,0 +1,20 @@
+[project]
+name = "cli-app"
+version = "1.0.0"
+description = "CLI application"
+dependencies = [
+  "click>=8.0.0",
+  "core-package==1.0.0",
+  "utils-package>=1.0.0"
+]
+
+[dependency-groups]
+dev = ["pytest>=7.0.0", "mypy>=1.0.0"]
+
+[tool.uv.sources]
+core-package = { workspace = true }
+utils-package = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

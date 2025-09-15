@@ -1,0 +1,69 @@
+version = 1
+requires-python = ">=3.8"
+
+[[package]]
+name = "cli-app"
+version = "1.0.0"
+source = { editable = "apps/cli" }
+dependencies = [
+  { name = "click" },
+  { name = "core-package" },
+  { name = "utils-package" }
+]
+
+[package.dev-dependencies]
+dev = [
+  { name = "mypy" },
+  { name = "pytest" }
+]
+
+[[package]]
+name = "click"
+version = "8.1.7"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "core-package"
+version = "1.0.0"
+source = { editable = "packages/core" }
+dependencies = [
+  { name = "requests" }
+]
+
+[[package]]
+name = "mypy"
+version = "1.7.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "pytest"
+version = "7.4.3"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "requests"
+version = "2.31.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "utils-package"
+version = "1.0.0"
+source = { editable = "packages/utils" }
+
+[[package]]
+name = "my-workspace"
+version = "1.0.0"
+source = { editable = "." }
+
+[package.dev-dependencies]
+dev = [
+  { name = "black" },
+  { name = "core-package" },
+  { name = "pytest" },
+  { name = "utils-package" }
+]
+
+[[package]]
+name = "black"
+version = "23.11.0"
+source = { registry = "https://pypi.org/simple" }
