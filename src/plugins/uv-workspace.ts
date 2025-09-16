@@ -91,10 +91,9 @@ export class UvWorkspace extends WorkspacePlugin<UvPackageInfo> {
       'pyproject.toml',
       this.targetBranch
     );
+    // TODO: Fix types
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pyprojectManifest = TOML.parse(pyprojectContent.parsedContent) as any;
-
-    // Check if this is a UV workspace
     if (!pyprojectManifest.tool?.uv?.workspace?.members) {
       this.logger.warn(
         "uv-workspace plugin used, but top-level pyproject.toml isn't a UV workspace"
@@ -129,35 +128,31 @@ export class UvWorkspace extends WorkspacePlugin<UvPackageInfo> {
           this.targetBranch
         ));
       const manifest = parsePyProject(manifestContent.parsedContent);
-      const packageName = manifest.project?.name || manifest.tool?.poetry?.name;
-
+      const packageName = manifest.project?.name;
       if (!packageName) {
         this.logger.warn(
-          `package manifest at ${manifestPath} is missing project.name or tool.poetry.name`
+          `package manifest at ${manifestPath} is missing [project.name]`
         );
         continue;
       }
-
       if (candidate) {
         candidatesByPackage[packageName] = candidate;
       }
 
-      const version =
-        manifest.project?.version || manifest.tool?.poetry?.version;
+      const version = manifest.project?.version;
       if (!version) {
         throw new ConfigurationError(
-          `package manifest at ${manifestPath} is missing version`,
+          `package manifest at ${manifestPath} is missing [project.version]`,
           'uv-workspace',
           `${this.github.repository.owner}/${this.github.repository.repo}`
         );
       } else if (typeof version !== 'string') {
         throw new ConfigurationError(
-          `package manifest at ${manifestPath} has an invalid version`,
+          `package manifest at ${manifestPath} has an invalid [project.version]`,
           'uv-workspace',
           `${this.github.repository.owner}/${this.github.repository.repo}`
         );
       }
-
       allPackages.push({
         path,
         name: packageName,
@@ -167,7 +162,6 @@ export class UvWorkspace extends WorkspacePlugin<UvPackageInfo> {
         manifestPath,
       });
     }
-
     return {
       allPackages,
       candidatesByPackage,
@@ -188,7 +182,6 @@ export class UvWorkspace extends WorkspacePlugin<UvPackageInfo> {
     if (!version) {
       throw new Error(`Didn't find updated version for ${pkg.name}`);
     }
-
     const updater = new PyProjectToml({
       version,
     });
