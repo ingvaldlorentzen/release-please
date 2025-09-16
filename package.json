@@ -104,5 +104,8 @@
   },
   "overrides": {
     "tmp": "0.2.5"
+  },
+  "publishConfig": {
+    "@intility:registry": "https://npm.pkg.github.com/"
   }
 }
