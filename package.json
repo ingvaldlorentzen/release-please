@@ -1,6 +1,6 @@
 {
   "name": "@intility/release-please-uv-workspace",
-  "version": "17.1.2-preview.0",
+  "version": "17.1.2-preview.1",
   "description": "generate release PRs based on the conventionalcommits.org spec",
   "main": "./build/src/index.js",
   "bin": "./build/src/bin/release-please.js",

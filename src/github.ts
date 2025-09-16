@@ -447,7 +447,7 @@ export class GitHub {
       cursor,
       owner: this.repository.owner,
       repo: this.repository.repo,
-      num: 10,
+      num: 5,
       targetBranch,
       maxFilesChanged: 100, // max is 100
     };
