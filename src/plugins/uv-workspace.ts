@@ -34,7 +34,6 @@ import {Commit} from '../commit';
 import {Release} from '../release';
 import {PyProjectToml} from '../updaters/python/pyproject-toml';
 import {parsePyProject} from '../updaters/python/pyproject-toml';
-import {UvLock} from '../updaters/python/uv-lock';
 import * as TOML from '@iarna/toml';
 
 interface UvPackageInfo {
@@ -204,8 +203,6 @@ export class UvWorkspace extends WorkspacePlugin<UvPackageInfo> {
             dependencyNotes,
             this.logger
           );
-        } else if (update.path === addPath(existingCandidate.path, 'uv.lock')) {
-          update.updater = new UvLock(updatedVersions);
         }
         return update;
       });
@@ -325,8 +322,7 @@ export class UvWorkspace extends WorkspacePlugin<UvPackageInfo> {
   }
 
   protected postProcessCandidates(
-    candidates: CandidateReleasePullRequest[],
-    updatedVersions: VersionsMap
+    candidates: CandidateReleasePullRequest[]
   ): CandidateReleasePullRequest[] {
     let rootCandidate = candidates.find(c => c.path === ROOT_PROJECT_PATH);
     if (!rootCandidate) {
@@ -337,14 +333,6 @@ export class UvWorkspace extends WorkspacePlugin<UvPackageInfo> {
       this.logger.warn('Unable to find a python candidate pull request');
       return candidates;
     }
-
-    // Update the root uv.lock if it exists
-    rootCandidate.pullRequest.updates.push({
-      path: 'uv.lock',
-      createIfMissing: false,
-      updater: new UvLock(updatedVersions),
-    });
-
     return candidates;
   }
 
