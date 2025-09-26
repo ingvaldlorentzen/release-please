@@ -1,6 +1,6 @@
 {
-  "name": "release-please",
-  "version": "17.1.2",
+  "name": "@intility/release-please-uv-workspace",
+  "version": "17.1.2-preview.2",
   "description": "generate release PRs based on the conventionalcommits.org spec",
   "main": "./build/src/index.js",
   "bin": "./build/src/bin/release-please.js",
@@ -104,5 +104,8 @@
   },
   "overrides": {
     "tmp": "0.2.5"
+  },
+  "publishConfig": {
+    "@intility:registry": "https://npm.pkg.github.com/"
   }
 }

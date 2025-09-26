@@ -29,6 +29,7 @@ import {MavenWorkspace} from '../plugins/maven-workspace';
 import {ConfigurationError} from '../errors';
 import {SentenceCase} from '../plugins/sentence-case';
 import {GroupPriority} from '../plugins/group-priority';
+import {UvWorkspace} from '../plugins/uv-workspace';
 import {Logger} from '../util/logger';
 import {WorkspacePluginOptions} from '../plugins/workspace';
 
@@ -96,6 +97,19 @@ const pluginFactories: Record<string, PluginBuilder> = {
     ),
   'maven-workspace': options =>
     new MavenWorkspace(
+      options.github,
+      options.targetBranch,
+      options.repositoryConfig,
+      {
+        ...options,
+        ...(options.type as WorkspacePluginOptions),
+        merge:
+          (options.type as WorkspacePluginOptions).merge ??
+          !options.separatePullRequests,
+      }
+    ),
+  'uv-workspace': options =>
+    new UvWorkspace(
       options.github,
       options.targetBranch,
       options.repositoryConfig,
